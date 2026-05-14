@@ -188,6 +188,56 @@ export const md5Hasher = new HashManager('md5', 'hex');
 
 const mdChunkingRegExp = /\n(?=#{1,6} )/g;
 
+// Known embedded-video iframe hosts. When an iframe's src matches one of these
+// patterns we treat it as a `<video>` for retention/formatting purposes, and
+// rewrite the URL to its canonical watch page (more useful in markdown than
+// the embed-only URL).
+// Leading `(?:https?:)?\/\/` accepts both fully-qualified URLs and the
+// protocol-relative form `//host/...` that some embeds emit.
+const EMBEDDED_VIDEO_PATTERNS: { test: RegExp; canonical?: (m: RegExpMatchArray) => string; }[] = [
+    {
+        test: /^(?:https?:)?\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/embed\/([\w-]+)/i,
+        canonical: (m) => `https://www.youtube.com/watch?v=${m[1]}`,
+    },
+    {
+        test: /^(?:https?:)?\/\/youtu\.be\/([\w-]+)/i,
+        canonical: (m) => `https://www.youtube.com/watch?v=${m[1]}`,
+    },
+    {
+        // bilibili embeds carry the BV id in a `bvid=` query param; older
+        // embeds use `aid=` instead — that variant falls through to the
+        // next pattern and keeps the raw embed URL.
+        test: /^(?:https?:)?\/\/player\.bilibili\.com\/player\.html\?[^"'\s]*?bvid=(BV[\w-]+)/i,
+        canonical: (m) => `https://www.bilibili.com/video/${m[1]}`,
+    },
+    {
+        test: /^(?:https?:)?\/\/player\.bilibili\.com\/player\.html\?/i,
+    },
+    {
+        test: /^(?:https?:)?\/\/player\.vimeo\.com\/video\/(\d+)/i,
+        canonical: (m) => `https://vimeo.com/${m[1]}`,
+    },
+    {
+        test: /^(?:https?:)?\/\/(?:www\.)?dailymotion\.com\/embed\/video\/([\w-]+)/i,
+        canonical: (m) => `https://www.dailymotion.com/video/${m[1]}`,
+    },
+    { test: /^(?:https?:)?\/\/player\.twitch\.tv\//i },
+    { test: /^(?:https?:)?\/\/clips\.twitch\.tv\/embed\?/i },
+    { test: /^(?:https?:)?\/\/v\.qq\.com\//i },
+    { test: /^(?:https?:)?\/\/(?:www\.)?tiktok\.com\/embed/i },
+];
+
+function resolveEmbeddedVideoUrl(rawSrc: string): string | undefined {
+    for (const { test, canonical } of EMBEDDED_VIDEO_PATTERNS) {
+        const m = rawSrc.match(test);
+        if (m) {
+            const url = canonical ? canonical(m) : rawSrc;
+            return url.startsWith('//') ? `https:${url}` : url;
+        }
+    }
+    return undefined;
+}
+
 @singleton()
 export class SnapshotFormatter extends AsyncService {
 
@@ -340,6 +390,8 @@ export class SnapshotFormatter extends AsyncService {
             const noGFMOpts = this.threadLocal.get('noGfm');
             const imageRetention = this.threadLocal.get('retainImages') as CrawlerOptions['retainImages'];
             let imgIdx = 0;
+            let videoIdx = 0;
+            let audioIdx = 0;
             const urlToAltMap: { [k: string]: string | undefined; } = _.fromPairs(snapshot.imgs?.map(
                 (x) => [(x.src.startsWith('data:') ? this.dataUrlToBlobUrl(x.src, snapshot.rebase) : x.src).trim(), x.alt]
             ));
@@ -415,6 +467,80 @@ export class SnapshotFormatter extends AsyncService {
 
                         return alt ? `![Image ${imgSerial}: ${alt}](${src})` : `![Image ${imgSerial}](${src})`;
                     }
+                } as MarkifyRule,
+
+                'media-retention': {
+                    filter: ['video', 'audio'],
+                    replacement: (_content: string, node: HTMLElement) => {
+                        if (imageRetention === 'none') {
+                            return '';
+                        }
+
+                        const isVideo = node.tagName.toLowerCase() === 'video';
+
+                        if (imageRetention === 'alt') {
+                            return isVideo ? `(Video ${++videoIdx})` : `(Audio ${++audioIdx})`;
+                        }
+                        const sourceNode = node.querySelector('source[src], source[srcset], source[data-src]') || node;
+                        const originalSrc = (sourceNode?.getAttribute('src') || '').trim();
+                        let linkPreferredSrc = originalSrc;
+                        const maybeSrcSet: string = (sourceNode?.getAttribute('srcset') || '').trim();
+                        if (!linkPreferredSrc && maybeSrcSet) {
+                            linkPreferredSrc = maybeSrcSet.split(',').map((x) => x.trim()).filter(Boolean)[0];
+                        }
+                        if (!linkPreferredSrc || linkPreferredSrc.startsWith('data:')) {
+                            const dataSrc = (sourceNode?.getAttribute('data-src') || '').trim();
+                            if (dataSrc && !dataSrc.startsWith('data:')) {
+                                linkPreferredSrc = dataSrc;
+                            }
+                        }
+
+                        let src = linkPreferredSrc;
+                        if (rebase) {
+                            try {
+                                src = new URL(linkPreferredSrc, rebase).toString();
+                            } catch (_err) {
+                                void 0;
+                            }
+                        }
+                        if (!src) {
+                            return '';
+                        }
+
+                        const blobUrl = (linkPreferredSrc.startsWith('data:') ? this.dataUrlToBlobUrl(linkPreferredSrc, snapshot.rebase) : src).trim();
+                        const idx = isVideo ? ++videoIdx : ++audioIdx;
+                        const label = isVideo ? 'Video' : 'Audio';
+
+                        return imgDataUrlToObjectUrl ? `![${label} ${idx}](${blobUrl})` : `![${label} ${idx}](${src})`;
+                    }
+                } as MarkifyRule,
+
+                'embedded-video-iframe': {
+                    filter: 'iframe',
+                    replacement: (content: string, node: HTMLElement) => {
+                        // src is standard; href is used by a few embed widgets as
+                        // a parallel canonical pointer to the playable video.
+                        const rawSrc = (node.getAttribute('src') || node.getAttribute('href') || '').trim();
+                        let videoMd = '';
+                        if (rawSrc) {
+                            let absoluteSrc = rawSrc;
+                            if (rebase) {
+                                try { absoluteSrc = new URL(rawSrc, rebase).toString(); } catch { /* keep raw */ }
+                            }
+                            const resolved = resolveEmbeddedVideoUrl(absoluteSrc);
+                            if (resolved && imageRetention !== 'none') {
+                                videoMd = imageRetention === 'alt'
+                                    ? `(Video ${++videoIdx})`
+                                    : `![Video ${++videoIdx}](${resolved})`;
+                            }
+                        }
+
+                        if (videoMd) {
+                            return videoMd;
+                        }
+
+                        return content;
+                    },
                 } as MarkifyRule,
             };
 
