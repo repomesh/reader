@@ -41,11 +41,12 @@ export class MarkifyService {
 
     links: Array<{
         href: string;
-        domain: string;
+        // domain: string;
         text: string;
+        title?: string;
         ref: number;
-        title: string;
     }> = [];
+    hrefTitleMap = new Map<string, number>();
 
     images: Array<{ src: string; alt: string; ref: number; }> = [];
 
@@ -53,7 +54,7 @@ export class MarkifyService {
     protected listStack: Array<{ tag: string; num?: number; }> = [];
 
     protected tableStack: Array<{ tag: string; hasTh: boolean; }> = [];
-    refMap = new WeakMap<Element, MarkifyService['links'][0] | MarkifyService['images'][0]>();
+    refMap = new WeakMap<Element, any>();
 
     protected ignoreDivNewline: boolean = false;
     protected ignoreEmptyTextNode: boolean = true;
@@ -151,25 +152,48 @@ export class MarkifyService {
         let markdown = '';
         markdown = this.processNode(element);
         // Trim leading/trailing whitespace and ensure consistent newlines
-        let r = markdown.trim().replace(/\n{3,}/g, '\n\n');
+        const chunks = [
+            markdown.trim().replace(/\n{3,}/g, '\n\n'),
+        ];
 
         if (this.options.linkStyle === 'referenced' && this.links.length) {
-            r += '\n\n';
+            chunks.push('');
             switch (this.options.linkReferenceStyle) {
                 case 'collapsed':
                 case 'shortcut': {
-                    r += this.links.map((x) => `[${x.text}]: ${x.href}${x.title ? ` "${x.title}"` : ''}`).join('\n');
+                    chunks.push(this.links.map((x) => `[${x.text}]: ${x.href}${x.title ? ` "${x.title}"` : ''}`).join('\n'));
                     break;
                 }
 
                 default: {
-                    r += this.links.map((x) => `[${x.ref}]: ${x.href}${x.title ? ` "${x.title}"` : ''}`).join('\n');
+                    const expposed = new Set();
+                    chunks.push(this.links.filter((x) => {
+                        if (expposed.has(x.ref)) {
+                            return false;
+                        };
+                        expposed.add(x.ref);
+                        return true;
+                    }).map((x) => `[${x.ref}]: ${x.href}${x.title ? ` "${x.title}"` : ''}`).join('\n'));
                     break;
                 }
             }
         }
 
-        return r;
+        return chunks.join('\n');
+    }
+
+    trackLink(href: string, text: string = '', title?: string) {
+        const normalizedTitle = title ? title.replaceAll(/"/g, '\\"').replaceAll(/\r?\n/g, ' ').trim() : '';
+        const hrefTitleString = `${href}${normalizedTitle ? ` "${normalizedTitle}"` : ''}`;
+        const normalizedText = text.replaceAll(/\s+/g, ' ').replaceAll(/\r?\n/g, ' ').trim();
+        const record = { href, text: normalizedText, title: normalizedTitle, ref: -1 };
+        if (!this.hrefTitleMap.has(hrefTitleString)) {
+            this.hrefTitleMap.set(hrefTitleString, this.hrefTitleMap.size + 1);
+        }
+        record.ref = this.hrefTitleMap.get(hrefTitleString)!;
+        this.links.push(record);
+
+        return record.ref;
     }
 
     protected processNode(element: Element): string {
@@ -437,7 +461,7 @@ export class MarkifyService {
             linkRef = this.links.length + 1;
             const rec = { href, text, title, ref: linkRef, domain };
             this.refMap.set(element, rec);
-            this.links.push(rec);
+            this.trackLink(href, text, title);
         }
 
         const headingRegex = /^#{1,} /;
@@ -801,13 +825,13 @@ export class MarkifyService {
         }
     }
 
-    public use(addRuleFns: Array<(service: MarkifyService) => void>) {
+    use(addRuleFns: Array<(service: MarkifyService) => void>) {
         addRuleFns.forEach((fn) => {
             fn(this);
         });
     }
 
-    public addRule(name: string, rule: MarkifyRule) {
+    addRule(name: string, rule: MarkifyRule) {
         const { filter, replacement } = rule;
         const tags = Array.isArray(filter) ? filter : [filter];
 
@@ -821,16 +845,9 @@ export class MarkifyService {
         });
     }
 
-    public keep(tag?: string) {
+    keep(tag?: string) {
         if (!tag) return;
         this.keepTags.add(tag.toLowerCase());
     }
 
-    public getLinks() {
-        return this.links.map((link) => ({
-            href: link.href,
-            text: link.text,
-            ref: link.ref,
-        }));
-    }
 }

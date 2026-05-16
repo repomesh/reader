@@ -406,6 +406,107 @@ describe('CrawlerOptions.from() header parsing', () => {
     });
 });
 
+// ── preset parameter ─────────────────────────────────────────────────────────
+
+describe('CrawlerOptions preset (header)', () => {
+    function fromWithHeaders(headers: Record<string, string>): CrawlerOptions {
+        const lowerHeaders = Object.fromEntries(
+            Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])
+        );
+        const mockCtx = {
+            get: (h: string) => lowerHeaders[h.toLowerCase()] ?? '',
+            headers: lowerHeaders,
+        };
+        const input = Object.create({});
+        Reflect.set(input, RPC_CALL_ENVIRONMENT, mockCtx);
+        return CrawlerOptions.from(input) as CrawlerOptions;
+    }
+
+    it('no preset leaves defaults unchanged', () => {
+        const opts = fromWithHeaders({});
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainMedia, 'link');
+        assert.strictEqual(opts.retainLinks, 'all');
+        assert.strictEqual(opts.withLinksSummary, undefined);
+    });
+
+    it('ignores unknown preset value', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'bogus' });
+        assert.strictEqual(opts.preset, undefined);
+        assert.strictEqual(opts.retainImages, 'all');
+    });
+
+    it('preset=reader sets retainMedia to html', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'reader' });
+        assert.strictEqual(opts.preset, 'reader');
+        assert.strictEqual(opts.retainMedia, 'html');
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainLinks, 'all');
+    });
+
+    it('preset=index sets compact text-oriented values', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'index' });
+        assert.strictEqual(opts.preset, 'index');
+        assert.strictEqual(opts.retainImages, 'alt');
+        assert.strictEqual(opts.retainMedia, 'none');
+        assert.strictEqual(opts.retainLinks, 'text');
+    });
+
+    it('preset=research sets markdown chunking and keeps all media', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'research' });
+        assert.strictEqual(opts.preset, 'research');
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainMedia, 'link');
+        assert.strictEqual(opts.retainLinks, 'all');
+        assert.strictEqual(opts.withLinksSummary, undefined);
+    });
+
+    it('preset=agent sets alt images and keeps link media', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'agent' });
+        assert.strictEqual(opts.preset, 'agent');
+        assert.strictEqual(opts.retainImages, 'alt');
+        assert.strictEqual(opts.retainMedia, 'link');
+        assert.strictEqual(opts.retainLinks, 'all');
+    });
+
+    it('preset=spider enables link summary and keeps all media', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'spider' });
+        assert.strictEqual(opts.preset, 'spider');
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainMedia, 'link');
+        assert.strictEqual(opts.retainLinks, 'all');
+        assert.strictEqual(opts.withLinksSummary, 'all');
+    });
+
+    it('explicit X-Retain-Images overrides preset=index', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'index', 'x-retain-images': 'all' });
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainMedia, 'none');
+    });
+
+    it('explicit X-Retain-Media overrides preset=reader', () => {
+        const opts = fromWithHeaders({ 'x-preset': 'reader', 'x-retain-media': 'none' });
+        assert.strictEqual(opts.retainMedia, 'none');
+        assert.strictEqual(opts.retainImages, 'all');
+    });
+});
+
+describe('CrawlerOptions preset (body)', () => {
+    it('preset=index via body param applies preset values', () => {
+        const opts = CrawlerOptions.from({ preset: 'index' }) as CrawlerOptions;
+        assert.strictEqual(opts.preset, 'index');
+        assert.strictEqual(opts.retainImages, 'alt');
+        assert.strictEqual(opts.retainMedia, 'none');
+        assert.strictEqual(opts.retainLinks, 'text');
+    });
+
+    it('explicit body retainImages overrides preset=agent', () => {
+        const opts = CrawlerOptions.from({ preset: 'agent', retainImages: 'all' }) as CrawlerOptions;
+        assert.strictEqual(opts.retainImages, 'all');
+        assert.strictEqual(opts.retainMedia, 'link');
+    });
+});
+
 // ── assertStatusCode parameter (body) ───────────────────────────────────────
 
 describe('CrawlerOptions.assertStatusCode (body parameter)', () => {

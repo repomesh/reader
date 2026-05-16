@@ -236,11 +236,11 @@ describe('links: referenced style', () => {
     });
 });
 
-describe('getLinks', () => {
+describe('links', () => {
     it('returns href, text, and ref for each collected link', () => {
         const svc = mkService();
         svc.markify(parseDoc('<a href="https://a.com">Alpha</a>'));
-        const links = svc.getLinks();
+        const links = svc.links;
         assert.equal(links.length, 1);
         assert.equal(links[0].href, 'https://a.com');
         assert.equal(links[0].text, 'Alpha');

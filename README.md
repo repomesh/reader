@@ -74,6 +74,23 @@ You can control the behavior of the Reader API using request headers. The list b
   - `text` returns `document.body.innerText`
   - `screenshot` returns the URL of the webpage's screenshot
   - `pageshot` similar to `screenshot` but tries to capture the whole page instead of just the viewport
+  - `frontmatter` / `markdown+frontmatter` returns **Markdown with a YAML frontmatter block**. The default plain-text response uses a custom `Title: …` / `URL Source: …` header format; `frontmatter` replaces that with a front matter block. Example:
+
+    ```bash
+    curl -H 'X-Respond-With: frontmatter' 'https://r.jina.ai/https://example.com'
+    ```
+
+    ```markdown
+    ---
+    title: "Example Domain"
+    description: "This domain is for use in illustrative examples."
+    url: "https://example.com/"
+    ---
+
+    ## Example Domain
+
+    This domain is for use in illustrative examples in documents. ...
+    ```
 - `x-engine` — enforces a fetching engine: `browser` (headless Chrome), `curl` (lightweight, no JS), or `auto` (the default — Combined use of both browser and curl).
 - `x-proxy-url` — route the traffic through your designated proxy.
 - `x-cache-tolerance` — integer seconds; how stale a cached page is acceptable.
@@ -112,6 +129,12 @@ You can control the behavior of the Reader API using request headers. The list b
 - `x-markdown-chunking` — opt-in semantic chunking of the markdown response. Returns a JSON array (or ``-delimited text) of chunks instead of one blob:
   - `true` / `h1` … `h5` — heading-based split at the given heading level (e.g. `h3` chunks at `#`, `##`, and `###`).
   - `structured` / `s1` … `s5` — block-level structured split. `s1` is coarsest, `s5` finest.
+- `x-preset` — apply a pre-packaged option bundle for common scenarios. Preset values only take effect for options the caller does *not* set explicitly (via body or another header).
+  - `reader` — for display to human users.
+  - `index` — for semantic indexing / embedding pipelines.
+  - `research` — for academic / research AI agents.
+  - `agent` — for day-to-day AI agents.
+  - `spider` — for recursive site crawling.
 - `x-detach-invisibles` — temporarily detach elements with `display:none` before snapshotting, then restore them. Removes hidden overlays and cookie banners that obscure readable content. Requires the browser engine; disables caching.
 - `x-set-cookie` — forward cookie settings. Requests with cookies are not cached.
 - `x-md-*` — fine-tune markdown output (heading style, bullet markers, link style, etc.). See [src/dto/turndown-tweakable-options.ts](./src/dto/turndown-tweakable-options.ts).

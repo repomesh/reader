@@ -61,6 +61,58 @@ export const MEDIA_RETENTION_MODES = ['none', 'text', 'link', 'image', 'html'] a
 const MEDIA_RETENTION_MODE_VALUES = new Set<string>(MEDIA_RETENTION_MODES);
 export const BASE_URL_MODES = ['initial', 'final'] as const;
 const BASE_URL_MODE_VALUES = new Set<string>(BASE_URL_MODES);
+export const PRESET_NAMES = ['reader', 'index', 'research', 'agent', 'spider'] as const;
+const PRESET_NAME_VALUES = new Set<string>(PRESET_NAMES);
+
+// Fields that still equal their system default are eligible for preset override.
+const PRESET_OPTIONS: Record<string, Partial<CrawlerOptions>> = {
+    reader: {
+        retainImages: 'all',
+        retainMedia: 'html',
+        retainLinks: 'all',
+        respondWith: CONTENT_FORMAT.FRONTMATTER,
+        detachInvisibles: true,
+        removeOverlay: true,
+        markdown: {
+            linkStyle: 'referenced',
+            linkReferenceStyle: 'full',
+        },
+        base: 'final',
+    },
+    index: {
+        retainImages: 'alt',
+        retainMedia: 'none',
+        retainLinks: 'text',
+        respondWith: CONTENT_FORMAT.FRONTMATTER,
+        markdownChunking: CHUNKING_STRATEGY.STRUCTURED3,
+        base: 'final',
+    },
+    research: {
+        retainImages: 'all',
+        retainMedia: 'link',
+        retainLinks: 'all',
+        respondWith: `${CONTENT_FORMAT.MARKDOWN}+${CONTENT_FORMAT.FRONTMATTER}`,
+        markdownChunking: CHUNKING_STRATEGY.ENABLED3,
+        base: 'final',
+    },
+    agent: {
+        retainImages: 'alt',
+        retainMedia: 'link',
+        retainLinks: 'all',
+        respondWith: CONTENT_FORMAT.FRONTMATTER,
+        markdownChunking: CHUNKING_STRATEGY.ENABLED3,
+        base: 'final',
+    },
+    spider: {
+        retainImages: 'all',
+        retainMedia: 'link',
+        retainLinks: 'all',
+        respondWith: `${CONTENT_FORMAT.MARKDOWN}+${CONTENT_FORMAT.FRONTMATTER}`,
+        markdownChunking: CHUNKING_STRATEGY.ENABLED3,
+        withLinksSummary: 'all',
+        base: 'final',
+    },
+};
 
 class Viewport extends Coercible {
     @Prop({
@@ -228,6 +280,18 @@ class Viewport extends Coercible {
                         `- link: markdown link, e.g. \`[Video 1](url)\` (default)\n` +
                         `- image: markdown image syntax, e.g. \`![Video 1](url)\`\n` +
                         `- html: original HTML with irrelevant attributes (class, id, style, data-*, aria-*) stripped\n\n`,
+                    in: 'header',
+                    schema: { type: 'string' }
+                },
+                'X-Preset': {
+                    description: `Apply a preset configuration for common scenarios.\n\n` +
+                        `Supported presets:\n` +
+                        `- reader: optimized for display to human users\n` +
+                        `- index: optimized for semantic indexing\n` +
+                        `- research: optimized for academic/research AI agents\n` +
+                        `- agent: optimized for day-to-day AI agents\n` +
+                        `- spider: optimized for recursive site crawling\n\n` +
+                        `Preset values are applied only to options not explicitly set by the caller.\n\n`,
                     in: 'header',
                     schema: { type: 'string' }
                 },
@@ -406,6 +470,9 @@ export class CrawlerOptions extends Coercible {
     @Prop({ default: 'link', type: MEDIA_RETENTION_MODE_VALUES })
     retainMedia?: typeof MEDIA_RETENTION_MODES[number];
 
+    @Prop({ type: PRESET_NAME_VALUES })
+    preset?: typeof PRESET_NAMES[number];
+
     @Prop({ default: 'all', type: LINK_RETENTION_MODE_VALUES })
     retainLinks?: typeof LINK_RETENTION_MODES[number];
 
@@ -556,8 +623,19 @@ export class CrawlerOptions extends Coercible {
     _hintCountry?: string;
 
     static override from(input: any) {
-        const instance = super.from(input) as CrawlerOptions;
         const ctx = Reflect.get(input, RPC_CALL_ENVIRONMENT) as Context | undefined;
+        let instance = super.from(input) as CrawlerOptions;
+        const presetHeader = ctx?.get('x-preset');
+        if (presetHeader && PRESET_NAME_VALUES.has(presetHeader)) {
+            instance.preset ??= presetHeader as any;
+        }
+        if (instance.preset && PRESET_NAME_VALUES.has(instance.preset)) {
+            instance = super.from({
+                preset: instance.preset,
+                ...PRESET_OPTIONS[instance.preset as keyof typeof PRESET_OPTIONS],
+                ...input
+            }) as CrawlerOptions;
+        }
 
         const customMode = ctx?.get('x-respond-with') || ctx?.get('x-return-format');
         if (customMode) {
@@ -573,6 +651,9 @@ export class CrawlerOptions extends Coercible {
                     message: `LM formats conflicts with content/markdown.`,
                 });
             }
+        }
+        if (instance.respondWith === CONTENT_FORMAT.FRONTMATTER) {
+            instance.respondWith = `${CONTENT_FORMAT.CONTENT}+${CONTENT_FORMAT.FRONTMATTER}`;
         }
 
         const locale = ctx?.get('x-locale');
@@ -778,14 +859,22 @@ export class CrawlerOptions extends Coercible {
         if (this.respondWith.includes('shot') || this.respondWith.includes('vlm')) {
             return RESPOND_TIMING.MEDIA_IDLE;
         }
+        if (this.__snapshotT0) {
+            const elapsed = performance.now() - this.__snapshotT0;
+            if (elapsed > 3000) {
+                return RESPOND_TIMING.MUTATION_IDLE;
+            }
+        }
 
         return RESPOND_TIMING.RESOURCE_IDLE;
     }
 
+    __snapshotT0?: number;
     isSnapshotAcceptableForEarlyResponse(snapshot: PageSnapshot) {
         if (this.waitForSelector?.length) {
             return false;
         }
+        this.__snapshotT0 ??= performance.now();
         const presumedTiming = this.presumedRespondTiming;
         if (presumedTiming === RESPOND_TIMING.MEDIA_IDLE && snapshot.lastMediaResourceLoaded && snapshot.lastMutationIdle) {
             const now = Date.now();

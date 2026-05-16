@@ -139,12 +139,11 @@ export class CrawlerHost extends RPCHost {
             } else if (this.indexedOpts.has(this.threadLocal.ctx) && !sourceHint) {
                 return;
             }
-            this.indexedOpts.add(options);
-            this.indexedOpts.add(this.threadLocal.ctx);
-
             if (!snapshot.title?.trim() && !snapshot.blobs?.length) {
                 return;
             }
+            this.indexedOpts.add(options);
+            this.indexedOpts.add(this.threadLocal.ctx);
             if (options.cookies?.length || options.private) {
                 // Potential privacy issue, dont cache if cookies are used
                 return;

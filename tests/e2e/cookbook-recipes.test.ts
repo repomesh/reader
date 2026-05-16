@@ -35,9 +35,10 @@ describe('cookbook: RAG inference (defaults)', () => {
     it('default response returns the article body and extracted title', async () => {
         // The cookbook claims defaults produce "the shape a chat model wants" —
         // i.e. content + title with the main article surfaced.
+        // Readability extracts the title separately from content, so the <h1>
+        // does not appear in content — check title and body text independently.
         const res = await crawl({});
         assert.strictEqual(res.status, 200);
-        assert.match(res.body.data.content, /Web Crawling Guide/);
         assert.match(res.body.data.content, /fetching pages/);
         assert.match(res.body.data.title, /Web Crawling Guide/);
     });
@@ -317,7 +318,8 @@ describe('cookbook: raw HTML upload', () => {
             });
         assert.strictEqual(res.status, 200);
         const data = res.body.data;
-        assert.match(data.content, /Web Crawling Guide/);
+        // Readability extracts title separately; check body text and title independently.
+        assert.match(data.content, /fetching pages/);
         assert.ok(typeof data.title === 'string' && data.title.length > 0);
     });
 

@@ -77,6 +77,7 @@ export class BinaryExtractorService extends AsyncService {
                 if (innerCharset && innerCharset !== encoding && WEB_SUPPORTED_ENCODINGS.has(innerCharset)) {
                     snapshot.html = await readBlob(blob, innerCharset);
                 }
+                snapshot.traits = [];
 
                 return snapshot;
             }

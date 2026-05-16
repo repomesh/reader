@@ -20,14 +20,6 @@ import { readFile } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import pseudoTransfer from './pseudo-transfer';
 
-export type ChunkNode = {
-    title: string;
-    level: number;
-    cleanedTitle: string;
-    content: string;
-    contentWithoutTitle: string;
-    parents: ChunkNode[];
-};
 export interface FormattedPage {
     title?: string;
     description?: string;
@@ -302,6 +294,15 @@ function stripIrrelevantAttrs(el: HTMLElement): void {
     }
 }
 
+export type ChunkNode = {
+    title: string;
+    level: number;
+    cleanedTitle: string;
+    content: string;
+    contentWithoutTitle: string;
+    parents: ChunkNode[];
+};
+
 @singleton()
 export class SnapshotFormatter extends AsyncService {
 
@@ -434,7 +435,7 @@ export class SnapshotFormatter extends AsyncService {
         const isInternal = this.threadLocal.get('isInternal');
         const baseUrl = new URL(snapshot.rebase || nominalUrl || snapshot.href);
         let markifyService: MarkifyService | undefined;
-        let gptOssTransformedLinks: WeakSet<object> | undefined;
+        let gptOssTransformedHrefs: Set<string> | undefined;
         do {
             if (snapshot.parsed?.content && !snapshot.html) {
                 contentText = (snapshot.parsed?.content || snapshot.text || '').trim();
@@ -601,10 +602,7 @@ export class SnapshotFormatter extends AsyncService {
                                 return labelText;
                             }
                             if (linkStyle === 'referenced') {
-                                const linkRef = instance!.links.length + 1;
-                                let domain = '';
-                                try { domain = new URL(effectiveSrc).hostname; } catch { void 0; }
-                                instance!.links.push({ href: effectiveSrc, text: labelText, title: '', ref: linkRef, domain });
+                                const linkRef = instance!.trackLink(effectiveSrc, labelText);
                                 switch (options?.linkReferenceStyle) {
                                     case 'collapsed': return `[${labelText}][]`;
                                     case 'shortcut': return `[${labelText}]`;
@@ -647,14 +645,13 @@ export class SnapshotFormatter extends AsyncService {
                                     if (linkStyle === 'discarded') {
                                         videoMd = labelText;
                                     } else if (linkStyle === 'referenced') {
-                                        const linkRef = instance!.links.length + 1;
-                                        let domain = '';
-                                        try { domain = new URL(resolved).hostname; } catch { void 0; }
-                                        instance!.links.push({ href: resolved, text: labelText, title: '', ref: linkRef, domain });
+                                        const linkRef = instance!.trackLink(resolved, labelText);
                                         if (options?.linkReferenceStyle === 'collapsed') {
                                             videoMd = `[${labelText}][]`;
                                         } else if (options?.linkReferenceStyle === 'shortcut') {
                                             videoMd = `[${labelText}]`;
+                                        } else {
+                                            videoMd = `[${labelText}][${linkRef}]`;
                                         }
                                     }
                                 } else {
@@ -676,7 +673,7 @@ export class SnapshotFormatter extends AsyncService {
 
             if (linkRetention && linkRetention !== 'all') {
                 if (linkRetention === 'gpt-oss') {
-                    gptOssTransformedLinks = new WeakSet();
+                    gptOssTransformedHrefs = new Set();
                     customRules['link-retention'] = {
                         filter: 'a',
                         replacement: function (content, element) {
@@ -694,7 +691,7 @@ export class SnapshotFormatter extends AsyncService {
                             if ('domain' in rec && rec.domain && rec.domain !== baseUrl.hostname) {
                                 vecs.push(escapeGptOssLinkText(rec.domain));
                             }
-                            gptOssTransformedLinks!.add(rec);
+                            gptOssTransformedHrefs!.add(rec.href);
 
                             return `【${vecs.join('†')}】`;
                         }
@@ -749,7 +746,7 @@ export class SnapshotFormatter extends AsyncService {
 
             if (toBeTurnedToMd) {
                 try {
-                    gptOssTransformedLinks = new WeakSet();
+                    gptOssTransformedHrefs = new Set();
                     contentText = this.jsdomControl.runMarkify(markifyService, toBeTurnedToMd).trim();
                     imgIdx = 0;
                 } catch (err) {
@@ -763,7 +760,7 @@ export class SnapshotFormatter extends AsyncService {
             ) {
                 toBeTurnedToMd = jsDomElementOfHTML;
                 try {
-                    gptOssTransformedLinks = new WeakSet();
+                    gptOssTransformedHrefs = new Set();
                     contentText = this.jsdomControl.runMarkify(markifyService, jsDomElementOfHTML).trim();
                     imgIdx = 0;
                 } catch (err) {
@@ -831,7 +828,7 @@ export class SnapshotFormatter extends AsyncService {
                 formatted.links = links;
             } else if (this.threadLocal.get('withLinksSummary') === 'gpt-oss' && markifyService?.links.length) {
                 const pairs = markifyService.links.map((rec) => {
-                    if (!(gptOssTransformedLinks?.has(rec))) {
+                    if (!(gptOssTransformedHrefs?.has(rec.href))) {
                         return null;
                     }
 
@@ -885,7 +882,6 @@ export class SnapshotFormatter extends AsyncService {
     }
 
     *iterMarkdownChunks(content: string) {
-
         let level = 0;
         const chunkStack = [] as ChunkNode[];
         for (const chunk of content.split(mdChunkingRegExp)) {
