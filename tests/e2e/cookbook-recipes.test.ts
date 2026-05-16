@@ -333,7 +333,7 @@ describe('cookbook: x-preset shortcuts', () => {
         const res = await crawlWithHeaders({ 'X-Preset': 'spider' });
         assert.strictEqual(res.status, 200);
         // withLinksSummary: all — links footer populated
-        const hrefs = Object.values(res.body.data.links as Record<string, string>);
+        const hrefs = (res.body.data.links as Array<[string, string]> || []).map(([_, url]) => url);
         assert.ok(hrefs.length > 0, 'spider preset should populate link summary');
         assert.ok(
             hrefs.some((h) => h === 'https://example.com/crawling'),

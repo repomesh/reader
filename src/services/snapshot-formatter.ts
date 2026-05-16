@@ -87,21 +87,21 @@ export class FormattedPageDto extends Coercible {
     @Prop()
     numPages?: number;
     @Prop({
-        type: [DictOf(String), ArrayOf(String)],
+        type: [Object, DictOf(String), ArrayOf(String)],
     })
     links?: { [k: string]: string; } | [string, string][];
     @Prop({
-        type: [DictOf(String), ArrayOf(String)],
+        type: [Object, DictOf(String), ArrayOf(String)],
     })
     images?: { [k: string]: string; } | [string, string][];
     @Prop()
     warning?: string;
     @Prop({
-        type: DictOf(String),
+        type: [Object, DictOf(String)],
     })
     metadata?: { [k: string]: string; };
     @Prop({
-        type: DictOf(DictOf(DictOf(String, Object), Object), Object),
+        type: [Object, DictOf(DictOf(DictOf(String, Object), Object), Object)],
     })
     external?: { [rel: string]: { [href: string]: { [k: string]: string; }; }; };
 
