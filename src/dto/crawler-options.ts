@@ -861,7 +861,7 @@ export class CrawlerOptions extends Coercible {
         }
         if (this.__snapshotT0) {
             const elapsed = performance.now() - this.__snapshotT0;
-            if (elapsed > 3000) {
+            if (elapsed > 5_000) {
                 return RESPOND_TIMING.MUTATION_IDLE;
             }
         }
