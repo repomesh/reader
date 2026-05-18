@@ -66,7 +66,9 @@ export class ThorDataProxyProvider {
 
         const user = this.getUserName(countryCode, this.baseProxyUrl.username, stickyTimeoutMins);
         const dv = this.baseProxyUrl.hostname.split('.');
-        dv.splice(1, 0, srv);
+        if (dv[1].startsWith('thor')) {
+            dv.splice(1, 0, 'na');
+        }
 
         const url = new URL(`${this.baseProxyUrl.protocol}//${dv.join('.')}`);
         url.username = user;
@@ -82,12 +84,12 @@ export class ThorDataProxyProvider {
         const dyNameChunks = ['td-customer', username];
 
         if (countryCode !== 'any') {
-            dyNameChunks.push(`country-${countryCode}`);
+            dyNameChunks.push(`country-${countryCode.toUpperCase()}`);
         }
 
         if (stickyTimeoutMins > 0) {
-            const randomStr = randomBytes(16).toString('hex');
-            dyNameChunks.push(`sessid-${countryCode}${randomStr}`);
+            const randomStr = randomBytes(8).toString('hex');
+            dyNameChunks.push(`sessid-${countryCode.toUpperCase()}${randomStr}`);
             dyNameChunks.push(`sesstime-${stickyTimeoutMins}`);
         }
         return dyNameChunks.join('-');

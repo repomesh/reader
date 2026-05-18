@@ -194,6 +194,7 @@ export class CurlControl extends AsyncService {
                 const proxyUrlCopy = new URL(crawlOpts.proxyUrl);
                 curl.setOpt(Curl.option.PROXY, proxyUrlCopy.href);
                 curl.setOpt(Curl.option.CONNECTTIMEOUT_MS, 6_000);
+                curl.setOpt(Curl.option.PROXY_CREDENTIAL_NO_REUSE, 1);
             }
 
             let curlStream: Readable | undefined;
