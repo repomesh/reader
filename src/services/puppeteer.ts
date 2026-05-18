@@ -1245,8 +1245,16 @@ export class PuppeteerControl extends AsyncService {
                         if (req.isInterceptResolutionHandled()) {
                             return;
                         };
+                        const curlChain = [...curled.chain];
+                        while (curlChain.length > 1) {
+                            if (curlChain[0].result?.code === 200) {
+                                curlChain.shift();
+                                continue
+                            }
+                            break;
+                        }
 
-                        if (curled.chain.length === 1) {
+                        if (curlChain.length === 1) {
                             if (!curled.file) {
                                 return req.respond({
                                     status: curled.status,
@@ -1267,7 +1275,7 @@ export class PuppeteerControl extends AsyncService {
                         }
                         options.sideLoad ??= curled.sideLoadOpts;
                         _.merge(options.sideLoad, curled.sideLoadOpts);
-                        const firstReq = curled.chain[0];
+                        const firstReq = curlChain[0];
 
                         return req.respond({
                             status: firstReq.result!.code,
