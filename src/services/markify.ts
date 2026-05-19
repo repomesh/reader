@@ -188,10 +188,10 @@ export class MarkifyService {
         const normalizedText = text.replaceAll(/\s+/g, ' ').replaceAll(/\r?\n/g, ' ').trim();
         const record = { href, text: normalizedText, title: normalizedTitle, ref: -1 };
         if (!this.hrefTitleMap.has(hrefTitleString)) {
-            this.hrefTitleMap.set(hrefTitleString, this.hrefTitleMap.size + 1);
+            this.hrefTitleMap.set(hrefTitleString, this.links.length + 1);
+            this.links.push(record);
         }
         record.ref = this.hrefTitleMap.get(hrefTitleString)!;
-        this.links.push(record);
 
         return record.ref;
     }
@@ -461,7 +461,8 @@ export class MarkifyService {
             linkRef = this.links.length + 1;
             const rec = { href, text, title, ref: linkRef, domain };
             this.refMap.set(element, rec);
-            this.trackLink(href, text, title);
+            rec.ref = this.trackLink(href, text, title);
+            linkRef = rec.ref;
         }
 
         const headingRegex = /^#{1,} /;
