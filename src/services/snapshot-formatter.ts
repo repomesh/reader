@@ -730,13 +730,14 @@ export class SnapshotFormatter extends AsyncService {
             markifyService = this.getMarkify({ ...optsMixin });
             if (!mode.includes('markdown') && snapshot.parsed?.content && !snapshot.traits?.includes('blob')) {
                 const jsDomElementOfParsed = this.jsdomControl.snippetToElement(snapshot.parsed.content, snapshot.href);
-                const par1 = this.jsdomControl.runMarkify(markifyService, jsDomElementOfHTML);
+                const comparisonMarkifyService = this.getMarkify({ ...optsMixin, removeLinks: true });
+                const par1 = this.jsdomControl.runMarkify(comparisonMarkifyService, jsDomElementOfHTML);
                 imgIdx = 0;
-                const par2 = snapshot.parsed.content ? this.jsdomControl.runMarkify(markifyService, jsDomElementOfParsed) : '';
+                const par2 = snapshot.parsed.content ? this.jsdomControl.runMarkify(comparisonMarkifyService, jsDomElementOfParsed) : '';
 
                 // If Readability did its job
                 if (par2.length >= 0.3 * par1.length) {
-                    markifyService = this.getMarkify({ vanilla: true, ...optsMixin });
+                    markifyService = this.getMarkify({ targetingReadability: true, ...optsMixin });
                     imgIdx = 0;
                     if (snapshot.parsed.content) {
                         toBeTurnedToMd = jsDomElementOfParsed;
@@ -761,6 +762,7 @@ export class SnapshotFormatter extends AsyncService {
                 toBeTurnedToMd = jsDomElementOfHTML;
                 try {
                     gptOssTransformedHrefs = new Set();
+                    markifyService = this.getMarkify({ ...optsMixin });
                     contentText = this.jsdomControl.runMarkify(markifyService, jsDomElementOfHTML).trim();
                     imgIdx = 0;
                 } catch (err) {
@@ -1016,14 +1018,14 @@ export class SnapshotFormatter extends AsyncService {
     }
 
     getMarkify(options?: {
-        vanilla?: boolean | string,
+        targetingReadability?: boolean,
         url?: string | URL;
         imgDataUrlToObjectUrl?: boolean;
-        removeImages?: boolean | 'src';
         customRules?: { [k: string]: MarkifyRule; };
         customKeep?: string;
         gfm?: boolean;
         omitHead?: boolean;
+        removeLinks?: boolean;
     }) {
         const turndownOpts = this.threadLocal.get('turndownOpts');
         const markifyService = new MarkifyService({
@@ -1032,6 +1034,7 @@ export class SnapshotFormatter extends AsyncService {
             gfm: options?.gfm,
             codeBlockStyle: 'fenced',
             preformattedCode: true,
+            ...(options?.removeLinks ? { linkStyle: 'discarded' } : undefined),
         } as any);
 
         // keep does not work for now
@@ -1039,7 +1042,7 @@ export class SnapshotFormatter extends AsyncService {
             markifyService.keep(options.customKeep);
         }
 
-        if (!options?.vanilla) {
+        if (!options?.targetingReadability) {
             markifyService.addRule('remove-irrelevant', {
                 filter: ['meta', 'style', 'script', 'noscript', 'link', 'textarea', 'select'],
                 replacement: () => {
