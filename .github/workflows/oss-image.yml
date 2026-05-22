@@ -65,6 +65,12 @@ jobs:
           labels: |
             org.opencontainers.image.created={{timestamp}}
             org.opencontainers.image.source="https://github.com/jina-ai/reader"
+          tags: |
+            type=schedule
+            type=ref,event=branch
+            type=ref,event=tag
+            type=ref,event=pr
+            type=raw,value=oss,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
           flavor: |
             latest=true
       - name: Set up QEMU
